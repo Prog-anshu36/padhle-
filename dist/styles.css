@@ -66,3 +66,7 @@
 
 @media(hover:none){button,.control,.play,.text-button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}.primary:hover{transform:none}}
 
+.quality-label{font-size:.63rem;color:#788095;letter-spacing:.1em}.quality-label select{display:block;margin-top:3px;background:#161a26;color:#fff;border:1px solid var(--line);border-radius:7px;padding:4px 24px 4px 7px}
+@media(max-width:700px){.controls{grid-template-columns:44px 48px 44px 1fr auto auto}.quality-label{grid-column:6;grid-row:1;font-size:.58rem}.quality-label select{min-height:35px;font-size:.8rem;margin-top:1px;max-width:76px}}
+@media(max-width:380px){.controls{grid-template-columns:42px 46px 42px 1fr auto auto}}
+
