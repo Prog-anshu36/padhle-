@@ -26,11 +26,11 @@ $('#join-toggle').onclick=()=>$('#join-row').classList.toggle('hidden');
 $('#create-room').onclick=()=>enter(code(),true);
 $('#join-room').onclick=()=>enter($('#room-code').value.trim().toUpperCase(),false);
 $('#display-name').addEventListener('keydown',e=>{if(e.key==='Enter')$('#create-room').click()});
-const pathRoom=location.pathname.match(/\/room\/([\w-]+)/)?.[1];if(pathRoom){$('#room-code').value=pathRoom.toUpperCase();$('#join-row').classList.remove('hidden')}
+const pathRoom=new URLSearchParams(location.search).get('room')||location.pathname.match(/\/room\/([\w-]+)/)?.[1];if(pathRoom){$('#room-code').value=pathRoom.toUpperCase();$('#join-row').classList.remove('hidden')}
 
 async function enter(roomId,isCreator=false){
   const name=$('#display-name').value.trim();if(!name)return toast('Add your display name first');if(!roomId)return toast('Enter a room code');
-  app.name=name.slice(0,32);app.roomId=roomId;localStorage.syncstudy_name=app.name;history.pushState({},'',`${basePath}/room/${roomId}`);
+  app.name=name.slice(0,32);app.roomId=roomId;localStorage.syncstudy_name=app.name;history.pushState({},'',basePath?`${basePath}/?room=${roomId}`:`/room/${roomId}`);
   $('#landing').classList.add('hidden');$('#room').classList.remove('hidden');$('#room-id').textContent=roomId;
   if(cfg.supabaseUrl&&cfg.supabaseAnonKey&&window.supabase){
     app.sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey,{auth:{persistSession:false}});await connectSupabase();
