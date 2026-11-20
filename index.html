@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#090b14" />
+  <title>SyncStudy — Watch. Learn. Together.</title>
+  <meta name="description" content="Real-time synchronized YouTube study rooms with chat, notes, timers and bookmarks." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <main id="landing" class="landing">
+    <nav class="nav"><a class="brand" href="./"><span class="logo">S</span><span>SyncStudy</span></a><span class="nav-pill"><i></i> Study rooms, made social</span></nav>
+    <section class="hero">
+      <div class="eyebrow"><span>●</span> REAL-TIME STUDY ROOMS</div>
+      <h1>Watch. Learn.<br><em>Together.</em></h1>
+      <p>Create a room, invite your study crew, and keep every lecture perfectly in sync—without accounts or friction.</p>
+      <div class="join-card">
+        <label for="display-name">What should we call you?</label>
+        <input id="display-name" maxlength="32" placeholder="Your display name" autocomplete="nickname" />
+        <div class="hero-actions"><button id="create-room" class="primary">Create a study room</button><button id="join-toggle" class="secondary">Join with code</button></div>
+        <div id="join-row" class="join-row hidden"><input id="room-code" maxlength="12" placeholder="Room code" /><button id="join-room" class="primary">Join room</button></div>
+        <p class="micro">No sign-up. Rooms expire after inactivity.</p>
+      </div>
+      <div class="feature-strip"><span>⚡ Instant sync</span><span>◉ Up to 10 learners</span><span>✦ Shared notes & focus tools</span></div>
+    </section>
+    <div class="ambient one"></div><div class="ambient two"></div>
+  </main>
+
+  <main id="room" class="app hidden">
+    <header class="topbar">
+      <a class="brand" href="./"><span class="logo">S</span><span>SyncStudy</span></a>
+      <div class="room-meta"><span id="connection" class="status"><i></i> Connecting</span><span class="divider"></span><span>ROOM <b id="room-id"></b></span><button id="copy-link" class="icon-button" title="Copy invite link">⧉</button></div>
+      <button id="leave-room" class="ghost">Leave room</button>
+    </header>
+    <section class="workspace">
+      <div class="main-column">
+        <div class="video-card">
+          <div class="video-frame"><div id="player"></div><div id="player-empty"><span class="empty-icon">▶</span><h2>Load a lecture to begin</h2><p>Paste a YouTube URL below. Everyone in this room will watch together.</p></div></div>
+          <div class="video-info"><div><span class="kicker">NOW STUDYING</span><h2 id="video-title">No video loaded</h2></div><span id="sync-health" class="sync-badge">◎ Ready</span></div>
+          <div class="controls">
+            <button id="rewind" class="control" title="Back 10 seconds">↶<small>10</small></button><button id="play" class="play" title="Play or pause">▶</button><button id="forward" class="control" title="Forward 10 seconds">↷<small>10</small></button>
+            <span id="time">0:00 / 0:00</span><input id="seek" type="range" min="0" max="1000" value="0" aria-label="Video position" />
+            <label class="speed-label">SPEED <select id="speed" aria-label="Playback speed"></select></label>
+            <label class="volume">⌕ <input id="volume" type="range" min="0" max="100" value="80" aria-label="Local volume" /></label>
+            <button id="fullscreen" class="control" title="Fullscreen">⛶</button>
+          </div>
+        </div>
+        <div class="load-bar"><input id="video-url" placeholder="Paste a YouTube video URL…" /><button id="load-video" class="primary">Load video</button></div>
+        <div class="study-grid">
+          <section class="panel timer-panel"><div class="panel-head"><h3>Focus timer</h3><span class="shared">SHARED</span></div><div class="timer-body"><div id="timer-display">25:00</div><div><button id="timer-toggle" class="primary small">Start focus</button><button id="timer-reset" class="ghost small">Reset</button></div></div></section>
+          <section class="panel bookmarks-panel"><div class="panel-head"><h3>Bookmarks</h3><button id="add-bookmark" class="text-button">+ Add timestamp</button></div><div id="bookmarks" class="empty-list">No bookmarks yet</div></section>
+        </div>
+        <section class="panel notes-panel"><div class="panel-head"><h3>Shared notes</h3><span id="notes-state" class="saved">Saved</span></div><textarea id="notes" placeholder="Capture the key ideas from this lecture…"></textarea></section>
+      </div>
+      <aside class="side-column">
+        <section class="panel participants"><div class="panel-head"><h3>Study crew <span id="participant-count">0</span></h3><button id="copy-invite" class="text-button">Invite</button></div><div id="participants-list"></div></section>
+        <section class="panel chat"><div class="panel-head"><h3>Room chat</h3><span class="live-dot">LIVE</span></div><div id="messages" class="messages"><div class="welcome"><span>☕</span><p>Room chat is ready. Say hello to your study crew.</p></div></div><form id="chat-form"><input id="chat-input" maxlength="400" placeholder="Message the room…" /><button class="send" aria-label="Send">➤</button></form></section>
+      </aside>
+    </section>
+  </main>
+  <script src="./config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
+
