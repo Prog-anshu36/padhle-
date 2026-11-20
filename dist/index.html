@@ -49,6 +49,7 @@
             <label class="quality-label">QUALITY <select id="quality" aria-label="Video quality"><option value="default">Auto</option></select></label>
             <label class="volume">⌕ <input id="volume" type="range" min="0" max="100" value="80" aria-label="Local volume" /></label>
             <button id="fullscreen" class="control" title="Fullscreen">⛶</button>
+            <button id="landscape" class="control landscape" title="Landscape mode" aria-label="Landscape mode">▰</button>
           </div>
         </div>
         <div class="load-bar"><input id="video-url" placeholder="Paste a YouTube video URL…" /><button id="load-video" class="primary">Load video</button></div>
@@ -66,6 +67,7 @@
   </main>
   <script src="./config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="https://www.youtube.com/iframe_api"></script>
   <script src="./app.js"></script>
 </body>
