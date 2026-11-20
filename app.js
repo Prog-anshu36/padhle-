@@ -17,7 +17,9 @@ function refreshQualityOptions(){
   if(!app.ready)return;const select=$('#quality'),current=select.value;
   const levels=app.player.getAvailableQualityLevels?.()||[];
   select.innerHTML='<option value="default">Auto</option>'+levels.filter(q=>qualityLabels[q]).map(q=>`<option value="${q}">${qualityLabels[q]}</option>`).join('');
-  select.value=[...select.options].some(o=>o.value===current)?current:'default';
+  const preferred=levels.includes('medium')?'medium':'default';
+  select.value=[...select.options].some(o=>o.value===current&&current!=='default')?current:preferred;
+  if(!app.qualityInitialized&&preferred==='medium'){app.player.setPlaybackQuality?.('medium');app.qualityInitialized=true}
 }
 
 speedOptions.forEach(v=>$('#speed').add(new Option(`${v}x`,v)));
