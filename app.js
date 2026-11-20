@@ -52,6 +52,7 @@ async function connectSupabase(){
 }
 
 function roomPeerId(){return `syncstudy-${app.roomId.toLowerCase().replace(/[^a-z0-9-]/g,'')}`}
+function peerOptions(){return{config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:openrelay.metered.ca:80'},{urls:'turn:openrelay.metered.ca:80',username:'openrelayproject',credential:'openrelayproject'},{urls:'turn:openrelay.metered.ca:443',username:'openrelayproject',credential:'openrelayproject'},{urls:'turns:openrelay.metered.ca:443?transport=tcp',username:'openrelayproject',credential:'openrelayproject'}]}}}
 function connectPeerRoom(isCreator){
   app.demo=true;app.people=new Map([[uid,{name:app.name,user_id:uid}]]);app.connections=new Map();
   app.state=JSON.parse(localStorage.getItem(`syncstudy_state:${app.roomId}`)||'null')||baseState();applyState(app.state,true);renderDemoPeople();
@@ -59,15 +60,19 @@ function connectPeerRoom(isCreator){
   if(isCreator)startPeerHost();else startPeerClient();
 }
 function startPeerHost(){
-  setConnection(false,'Opening room');app.isHost=true;app.peer=new Peer(roomPeerId());
+  setConnection(false,'Opening room');app.isHost=true;app.peer=new Peer(roomPeerId(),peerOptions());
   app.peer.on('open',()=>setConnection(true,'Live P2P'));
   app.peer.on('connection',acceptPeerConnection);
   app.peer.on('error',e=>{if(e.type==='unavailable-id'){app.peer.destroy();startPeerClient()}else{setConnection(false,'P2P error');toast('Could not open the realtime room')}});
 }
 function startPeerClient(){
-  setConnection(false,'Joining room');app.isHost=false;app.peer=new Peer();
-  app.peer.on('open',()=>{const conn=app.peer.connect(roomPeerId(),{reliable:true});app.hostConnection=conn;wirePeerConnection(conn,false)});
-  app.peer.on('error',e=>{if(e.type==='peer-unavailable'){setConnection(false,'Room unavailable');toast('Room owner is offline or the room code is incorrect')}else setConnection(false,'P2P error')});
+  setConnection(false,'Joining room');app.isHost=false;app.joinAttempts=0;app.peer=new Peer(undefined,peerOptions());
+  app.peer.on('open',()=>connectToHost());
+  app.peer.on('error',e=>{if(e.type==='peer-unavailable'&&app.joinAttempts<6)setConnection(false,'Retrying connection');else if(e.type==='peer-unavailable'){setConnection(false,'Room unavailable');toast('Room owner is offline or the room code is incorrect')}else setConnection(false,'P2P error')});
+}
+function connectToHost(){
+  if(app.hostConnection?.open)return;app.joinAttempts++;const conn=app.peer.connect(roomPeerId(),{reliable:true});app.hostConnection=conn;wirePeerConnection(conn,false);
+  setTimeout(()=>{if(!conn.open&&app.joinAttempts<6)connectToHost()},1800);
 }
 function acceptPeerConnection(conn){app.connections.set(conn.peer,conn);wirePeerConnection(conn,true)}
 function wirePeerConnection(conn,hostSide){
@@ -102,11 +107,11 @@ function receiveState(s){if(!s||s.event_id===app.lastEvent)return;if(app.state&&
 function applyState(s,remote){
   if(!s)return;app.applying=true;$('#speed').value=s.playback_speed;$('#notes').value=s.notes||'';renderTimer();
   if(app.ready&&s.video_id){
-    $('#player-empty').classList.add('hidden');const loaded=app.player.getVideoData?.().video_id;
+    $('#player-empty').classList.add('hidden');const loaded=app.player.getVideoData?.()?.video_id;
     if(loaded!==s.video_id)app.player.loadVideoById({videoId:s.video_id,startSeconds:currentProjected(s)});
     app.player.setPlaybackRate(s.playback_speed);const drift=Math.abs(app.player.getCurrentTime()-currentProjected(s));if(remote&&drift>1.5)app.player.seekTo(currentProjected(s),true);
     if(s.is_playing&&app.player.getPlayerState()!==1)app.player.playVideo();if(!s.is_playing&&app.player.getPlayerState()===1)app.player.pauseVideo();
-    const title=app.player.getVideoData?.().title;if(title)$('#video-title').textContent=title;
+    const title=app.player.getVideoData?.()?.title;if(title)$('#video-title').textContent=title;
   }
   $('#play').textContent=s.is_playing?'❚❚':'▶';$('#sync-health').textContent=remote?'◎ Synced':'◎ Updated';setTimeout(()=>app.applying=false,350);
 }
@@ -115,7 +120,7 @@ window.onYouTubeIframeAPIReady=()=>{app.player=new YT.Player('player',{height:'1
 function onPlayerState(e){if(e.data===YT.PlayerState.CUED||e.data===YT.PlayerState.PLAYING)refreshQualityOptions();if(app.applying||Date.now()<app.suppressUntil)return;if(e.data===YT.PlayerState.PLAYING)updateState({current_time:app.player.getCurrentTime(),is_playing:true},'play');if(e.data===YT.PlayerState.PAUSED)updateState({current_time:app.player.getCurrentTime(),is_playing:false},'pause')}
 function onRateChange(e){if(app.applying)return;updateState({current_time:app.player.getCurrentTime(),playback_speed:e.data},'speed')}
 function onPlayerError(e){const msg={2:'Invalid video URL',5:'This video cannot be played in HTML5',100:'Video unavailable',101:'The owner disabled embedding',150:'The owner disabled embedding'}[e.data]||'This video cannot be played';toast(msg);$('#video-title').textContent=msg}
-function tick(){if(!app.ready)return;const now=app.player.getCurrentTime()||0,dur=app.player.getDuration()||0;$('#time').textContent=`${fmt(now)} / ${fmt(dur)}`;if(!$('#seek').matches(':active'))$('#seek').value=dur?now/dur*1000:0;const t=app.player.getVideoData?.().title;if(t)$('#video-title').textContent=t}
+function tick(){if(!app.ready)return;const now=app.player.getCurrentTime()||0,dur=app.player.getDuration()||0;$('#time').textContent=`${fmt(now)} / ${fmt(dur)}`;if(!$('#seek').matches(':active'))$('#seek').value=dur?now/dur*1000:0;const t=app.player.getVideoData?.()?.title;if(t)$('#video-title').textContent=t}
 function driftCheck(){if(!app.ready||!app.state||!app.state.is_playing)return;const drift=Math.abs(app.player.getCurrentTime()-currentProjected(app.state));if(drift>1.5){app.applying=true;app.player.seekTo(currentProjected(app.state),true);setTimeout(()=>app.applying=false,350);$('#sync-health').textContent='◎ Drift corrected'}}
 
 $('#play').onclick=()=>{if(!app.ready||!app.state?.video_id)return toast('Load a video first');app.player.getPlayerState()===1?app.player.pauseVideo():app.player.playVideo()};
