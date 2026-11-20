@@ -18,8 +18,9 @@ function refreshQualityOptions(){
   const levels=app.player.getAvailableQualityLevels?.()||[];
   select.innerHTML='<option value="default">Auto</option>'+levels.filter(q=>qualityLabels[q]).map(q=>`<option value="${q}">${qualityLabels[q]}</option>`).join('');
   const preferred=levels.includes('medium')?'medium':'default';
-  select.value=[...select.options].some(o=>o.value===current&&current!=='default')?current:preferred;
-  if(!app.qualityInitialized&&preferred==='medium'){app.player.setPlaybackQuality?.('medium');app.qualityInitialized=true}
+  const wanted=app.preferredQuality||([ ...select.options].some(o=>o.value===current&&current!=='default')?current:preferred);
+  select.value=[...select.options].some(o=>o.value===wanted)?wanted:preferred;
+  if(!app.qualityInitialized&&preferred==='medium'){app.preferredQuality='medium';app.player.setPlaybackQuality?.('medium');setTimeout(()=>app.player.setPlaybackQuality?.('medium'),400);app.qualityInitialized=true}
 }
 
 speedOptions.forEach(v=>$('#speed').add(new Option(`${v}x`,v)));
@@ -118,7 +119,7 @@ function applyState(s,remote){
   $('#play').textContent=s.is_playing?'❚❚':'▶';$('#sync-health').textContent=remote?'◎ Synced':'◎ Updated';setTimeout(()=>app.applying=false,350);
 }
 
-window.onYouTubeIframeAPIReady=()=>{app.player=new YT.Player('player',{height:'100%',width:'100%',playerVars:{controls:0,rel:0,modestbranding:1,playsinline:1,origin:location.origin},events:{onReady:e=>{app.ready=true;e.target.setVolume(+$('#volume').value);if(app.state)applyState(app.state,true);setInterval(tick,500);setInterval(driftCheck,5000)},onStateChange:onPlayerState,onPlaybackRateChange:onRateChange,onPlaybackQualityChange:e=>{$('#quality').value=e.data||'default'},onError:onPlayerError}})};
+window.onYouTubeIframeAPIReady=()=>{app.player=new YT.Player('player',{height:'100%',width:'100%',playerVars:{controls:0,rel:0,modestbranding:1,playsinline:1,origin:location.origin},events:{onReady:e=>{app.ready=true;e.target.setVolume(+$('#volume').value);if(app.state)applyState(app.state,true);setInterval(tick,500);setInterval(driftCheck,5000)},onStateChange:onPlayerState,onPlaybackRateChange:onRateChange,onPlaybackQualityChange:e=>{if(e.data&&qualityLabels[e.data]){$('#quality').value=e.data;app.preferredQuality=e.data}},onError:onPlayerError}})};
 function onPlayerState(e){if(e.data===YT.PlayerState.CUED||e.data===YT.PlayerState.PLAYING)refreshQualityOptions();if(app.applying||Date.now()<app.suppressUntil)return;if(e.data===YT.PlayerState.PLAYING)updateState({current_time:app.player.getCurrentTime(),is_playing:true},'play');if(e.data===YT.PlayerState.PAUSED)updateState({current_time:app.player.getCurrentTime(),is_playing:false},'pause')}
 function onRateChange(e){if(app.applying)return;updateState({current_time:app.player.getCurrentTime(),playback_speed:e.data},'speed')}
 function onPlayerError(e){const msg={2:'Invalid video URL',5:'This video cannot be played in HTML5',100:'Video unavailable',101:'The owner disabled embedding',150:'The owner disabled embedding'}[e.data]||'This video cannot be played';toast(msg);$('#video-title').textContent=msg}
@@ -129,7 +130,7 @@ $('#play').onclick=()=>{if(!app.ready||!app.state?.video_id)return toast('Load a
 $('#rewind').onclick=()=>seekBy(-10);$('#forward').onclick=()=>seekBy(10);function seekBy(n){if(!app.ready)return;const t=Math.max(0,app.player.getCurrentTime()+n);app.suppressUntil=Date.now()+500;app.player.seekTo(t,true);updateState({current_time:t},'seek')}
 $('#seek').onchange=e=>{const t=(+e.target.value/1000)*(app.player.getDuration()||0);app.suppressUntil=Date.now()+500;app.player.seekTo(t,true);updateState({current_time:t},'seek')};
 $('#speed').onchange=e=>{const wanted=+e.target.value,rates=app.player?.getAvailablePlaybackRates?.()||[1];const nearest=rates.reduce((a,b)=>Math.abs(b-wanted)<Math.abs(a-wanted)?b:a,rates[0]);if(nearest!==wanted)toast(`${wanted}x is not supported for this video; using ${nearest}x`);app.player.setPlaybackRate(nearest);updateState({current_time:app.player.getCurrentTime(),playback_speed:nearest},'speed')};
-$('#quality').onchange=e=>{if(!app.ready)return;const wanted=e.target.value;app.player.setPlaybackQuality?.(wanted);setTimeout(()=>{const actual=app.player.getPlaybackQuality?.()||'default';if(wanted!=='default'&&actual!==wanted)toast(`${qualityLabels[wanted]} is unavailable; YouTube selected ${qualityLabels[actual]||'Auto'}`);e.target.value=actual},500)};
+$('#quality').onchange=e=>{if(!app.ready)return;const wanted=e.target.value;app.preferredQuality=wanted;app.player.setPlaybackQuality?.(wanted);setTimeout(()=>{const actual=app.player.getPlaybackQuality?.()||'default';if(wanted!=='default'&&actual!==wanted)toast(`${qualityLabels[wanted]} may be adapted by YouTube for your connection`);if(actual!=='default')e.target.value=actual},500)};
 $('#volume').oninput=e=>app.player?.setVolume(+e.target.value);$('#fullscreen').onclick=()=>$('.video-frame').requestFullscreen?.();
 $('#landscape').onclick=async()=>{try{await $('.video-frame').requestFullscreen?.();await screen.orientation?.lock?.('landscape');toast('Landscape mode enabled')}catch{toast('Rotate your phone to landscape; orientation lock is not supported here')}};
 $('#load-video').onclick=()=>{const id=videoId($('#video-url').value.trim());if(!id)return toast('Paste a valid YouTube URL');updateState({video_id:id,current_time:0,is_playing:false,playback_speed:1},'video_change');$('#video-url').value=''};
