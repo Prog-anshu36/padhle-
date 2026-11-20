@@ -1,6 +1,7 @@
 /* SyncStudy client: YouTube IFrame API + Supabase Realtime authoritative room state. */
 const $ = (s) => document.querySelector(s);
 const cfg = window.SYNCSTUDY_CONFIG || {};
+const basePath = location.hostname.endsWith('github.io') ? '/padhle-' : '';
 const speedOptions = [.25,.5,.75,1,1.25,1.5,1.75,2,2.25,2.5,2.75,3];
 const uid = sessionStorage.syncstudy_uid || (sessionStorage.syncstudy_uid = crypto.randomUUID());
 const app = { roomId:null, name:'', sb:null, channel:null, player:null, ready:false, applying:false, state:null, lastEvent:null, demo:false, timer:null, notesTimer:null, suppressUntil:0 };
@@ -22,7 +23,7 @@ const pathRoom=location.pathname.match(/\/room\/([\w-]+)/)?.[1];if(pathRoom){$('
 
 async function enter(roomId){
   const name=$('#display-name').value.trim();if(!name)return toast('Add your display name first');if(!roomId)return toast('Enter a room code');
-  app.name=name.slice(0,32);app.roomId=roomId;localStorage.syncstudy_name=app.name;history.pushState({},'',`/room/${roomId}`);
+  app.name=name.slice(0,32);app.roomId=roomId;localStorage.syncstudy_name=app.name;history.pushState({},'',`${basePath}/room/${roomId}`);
   $('#landing').classList.add('hidden');$('#room').classList.remove('hidden');$('#room-id').textContent=roomId;
   if(cfg.supabaseUrl&&cfg.supabaseAnonKey&&window.supabase){
     app.sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey,{auth:{persistSession:false}});await connectSupabase();
@@ -105,6 +106,6 @@ $('#timer-toggle').onclick=()=>{const running=app.state?.timer_end_at&&new Date(
 $('#timer-reset').onclick=()=>updateState({timer_end_at:null,timer_duration:1500},'timer_reset');setInterval(renderTimer,1000);
 function renderTimer(){const s=app.state;if(!s)return;const left=s.timer_end_at?Math.max(0,Math.ceil((new Date(s.timer_end_at)-Date.now())/1000)):s.timer_duration||1500;$('#timer-display').textContent=fmt(left);$('#timer-toggle').textContent=s.timer_end_at&&left>0?'Pause':'Start focus'}
 function copyLink(){navigator.clipboard.writeText(location.href);toast('Invitation link copied')}
-$('#copy-link').onclick=copyLink;$('#copy-invite').onclick=copyLink;$('#leave-room').onclick=()=>{app.channel?.unsubscribe();location.href='/'};
+$('#copy-link').onclick=copyLink;$('#copy-invite').onclick=copyLink;$('#leave-room').onclick=()=>{app.channel?.unsubscribe();location.href=basePath||'/'};
 window.addEventListener('popstate',()=>location.reload());
 
