@@ -12,6 +12,13 @@ function videoId(value){try{const u=new URL(value);if(u.hostname.includes('youtu
 function fmt(n){n=Math.max(0,Math.floor(n||0));return `${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`}
 function currentProjected(s){if(!s)return 0;return s.is_playing?s.current_time+Math.max(0,(Date.now()-new Date(s.last_updated_at).getTime())/1000)*s.playback_speed:s.current_time}
 function color(name){return ['#7767ff','#31b7ae','#e76f9c','#e39a45','#4b94e8'][[...name].reduce((a,c)=>a+c.charCodeAt(0),0)%5]}
+const qualityLabels={small:'240p',medium:'360p',large:'480p',hd720:'720p',hd1080:'1080p',highres:'High-res'};
+function refreshQualityOptions(){
+  if(!app.ready)return;const select=$('#quality'),current=select.value;
+  const levels=app.player.getAvailableQualityLevels?.()||[];
+  select.innerHTML='<option value="default">Auto</option>'+levels.filter(q=>qualityLabels[q]).map(q=>`<option value="${q}">${qualityLabels[q]}</option>`).join('');
+  select.value=[...select.options].some(o=>o.value===current)?current:'default';
+}
 
 speedOptions.forEach(v=>$('#speed').add(new Option(`${v}x`,v)));
 $('#display-name').value=localStorage.syncstudy_name||'';
@@ -78,8 +85,8 @@ function applyState(s,remote){
   $('#play').textContent=s.is_playing?'❚❚':'▶';$('#sync-health').textContent=remote?'◎ Synced':'◎ Updated';setTimeout(()=>app.applying=false,350);
 }
 
-window.onYouTubeIframeAPIReady=()=>{app.player=new YT.Player('player',{height:'100%',width:'100%',playerVars:{controls:0,rel:0,modestbranding:1,playsinline:1,origin:location.origin},events:{onReady:e=>{app.ready=true;e.target.setVolume(+$('#volume').value);if(app.state)applyState(app.state,true);setInterval(tick,500);setInterval(driftCheck,5000)},onStateChange:onPlayerState,onPlaybackRateChange:onRateChange,onError:onPlayerError}})};
-function onPlayerState(e){if(app.applying||Date.now()<app.suppressUntil)return;if(e.data===YT.PlayerState.PLAYING)updateState({current_time:app.player.getCurrentTime(),is_playing:true},'play');if(e.data===YT.PlayerState.PAUSED)updateState({current_time:app.player.getCurrentTime(),is_playing:false},'pause')}
+window.onYouTubeIframeAPIReady=()=>{app.player=new YT.Player('player',{height:'100%',width:'100%',playerVars:{controls:0,rel:0,modestbranding:1,playsinline:1,origin:location.origin},events:{onReady:e=>{app.ready=true;e.target.setVolume(+$('#volume').value);if(app.state)applyState(app.state,true);setInterval(tick,500);setInterval(driftCheck,5000)},onStateChange:onPlayerState,onPlaybackRateChange:onRateChange,onPlaybackQualityChange:e=>{$('#quality').value=e.data||'default'},onError:onPlayerError}})};
+function onPlayerState(e){if(e.data===YT.PlayerState.CUED||e.data===YT.PlayerState.PLAYING)refreshQualityOptions();if(app.applying||Date.now()<app.suppressUntil)return;if(e.data===YT.PlayerState.PLAYING)updateState({current_time:app.player.getCurrentTime(),is_playing:true},'play');if(e.data===YT.PlayerState.PAUSED)updateState({current_time:app.player.getCurrentTime(),is_playing:false},'pause')}
 function onRateChange(e){if(app.applying)return;updateState({current_time:app.player.getCurrentTime(),playback_speed:e.data},'speed')}
 function onPlayerError(e){const msg={2:'Invalid video URL',5:'This video cannot be played in HTML5',100:'Video unavailable',101:'The owner disabled embedding',150:'The owner disabled embedding'}[e.data]||'This video cannot be played';toast(msg);$('#video-title').textContent=msg}
 function tick(){if(!app.ready)return;const now=app.player.getCurrentTime()||0,dur=app.player.getDuration()||0;$('#time').textContent=`${fmt(now)} / ${fmt(dur)}`;if(!$('#seek').matches(':active'))$('#seek').value=dur?now/dur*1000:0;const t=app.player.getVideoData?.().title;if(t)$('#video-title').textContent=t}
@@ -89,6 +96,7 @@ $('#play').onclick=()=>{if(!app.ready||!app.state?.video_id)return toast('Load a
 $('#rewind').onclick=()=>seekBy(-10);$('#forward').onclick=()=>seekBy(10);function seekBy(n){if(!app.ready)return;const t=Math.max(0,app.player.getCurrentTime()+n);app.suppressUntil=Date.now()+500;app.player.seekTo(t,true);updateState({current_time:t},'seek')}
 $('#seek').onchange=e=>{const t=(+e.target.value/1000)*(app.player.getDuration()||0);app.suppressUntil=Date.now()+500;app.player.seekTo(t,true);updateState({current_time:t},'seek')};
 $('#speed').onchange=e=>{const wanted=+e.target.value,rates=app.player?.getAvailablePlaybackRates?.()||[1];const nearest=rates.reduce((a,b)=>Math.abs(b-wanted)<Math.abs(a-wanted)?b:a,rates[0]);if(nearest!==wanted)toast(`${wanted}x is not supported for this video; using ${nearest}x`);app.player.setPlaybackRate(nearest);updateState({current_time:app.player.getCurrentTime(),playback_speed:nearest},'speed')};
+$('#quality').onchange=e=>{if(!app.ready)return;const wanted=e.target.value;app.player.setPlaybackQuality?.(wanted);setTimeout(()=>{const actual=app.player.getPlaybackQuality?.()||'default';if(wanted!=='default'&&actual!==wanted)toast(`${qualityLabels[wanted]} is unavailable; YouTube selected ${qualityLabels[actual]||'Auto'}`);e.target.value=actual},500)};
 $('#volume').oninput=e=>app.player?.setVolume(+e.target.value);$('#fullscreen').onclick=()=>$('.video-frame').requestFullscreen?.();
 $('#load-video').onclick=()=>{const id=videoId($('#video-url').value.trim());if(!id)return toast('Paste a valid YouTube URL');updateState({video_id:id,current_time:0,is_playing:false,playback_speed:1},'video_change');$('#video-url').value=''};
 
