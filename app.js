@@ -16,11 +16,11 @@ const qualityLabels={small:'240p',medium:'360p',large:'480p',hd720:'720p',hd1080
 function refreshQualityOptions(){
   if(!app.ready)return;const select=$('#quality'),current=select.value;
   const levels=app.player.getAvailableQualityLevels?.()||[];
-  select.innerHTML='<option value="default">Auto</option>'+levels.filter(q=>qualityLabels[q]).map(q=>`<option value="${q}">${qualityLabels[q]}</option>`).join('');
-  const preferred=levels.includes('medium')?'medium':(levels.includes('small')?'small':'default');
-  const wanted=app.preferredQuality||([ ...select.options].some(o=>o.value===current&&current!=='default')?current:preferred);
-  select.value=[...select.options].some(o=>o.value===wanted)?wanted:preferred;
-  if(!app.qualityInitialized&&preferred==='medium'){app.preferredQuality='medium';app.player.setPlaybackQuality?.('medium');setTimeout(()=>app.player.setPlaybackQuality?.('medium'),400);app.qualityInitialized=true}
+  const options=['medium',...levels.filter(q=>['small','large'].includes(q))];
+  select.innerHTML='<option value="default">Auto</option>'+options.map(q=>`<option value="${q}">${qualityLabels[q]}${q==='medium'&&!levels.includes(q)?' (requested)':''}</option>`).join('');
+  const wanted=app.preferredQuality||([ ...select.options].some(o=>o.value===current&&current!=='default')?current:'medium');
+  select.value=[...select.options].some(o=>o.value===wanted)?wanted:'medium';
+  if(!app.qualityInitialized){app.preferredQuality='medium';app.player.setPlaybackQuality?.('medium');setTimeout(()=>app.player.setPlaybackQuality?.('medium'),400);app.qualityInitialized=true}
 }
 
 speedOptions.forEach(v=>$('#speed').add(new Option(`${v}x`,v)));
@@ -119,7 +119,7 @@ function applyState(s,remote){
   $('#play').textContent=s.is_playing?'❚❚':'▶';$('#sync-health').textContent=remote?'◎ Synced':'◎ Updated';setTimeout(()=>app.applying=false,350);
 }
 
-window.onYouTubeIframeAPIReady=()=>{app.player=new YT.Player('player',{height:'100%',width:'100%',playerVars:{controls:0,rel:0,modestbranding:1,playsinline:1,origin:location.origin},events:{onReady:e=>{app.ready=true;e.target.setVolume(+$('#volume').value);if(app.state)applyState(app.state,true);setInterval(tick,500);setInterval(driftCheck,5000)},onStateChange:onPlayerState,onPlaybackRateChange:onRateChange,onPlaybackQualityChange:e=>{if(e.data&&qualityLabels[e.data]){$('#quality').value=e.data;app.preferredQuality=e.data}},onError:onPlayerError}})};
+window.onYouTubeIframeAPIReady=()=>{app.player=new YT.Player('player',{height:'100%',width:'100%',playerVars:{controls:0,rel:0,modestbranding:1,playsinline:1,origin:location.origin},events:{onReady:e=>{app.ready=true;e.target.setVolume(+$('#volume').value);if(app.state)applyState(app.state,true);setInterval(tick,500);setInterval(driftCheck,5000)},onStateChange:onPlayerState,onPlaybackRateChange:onRateChange,onPlaybackQualityChange:()=>{},onError:onPlayerError}})};
 function onPlayerState(e){if(e.data===YT.PlayerState.CUED||e.data===YT.PlayerState.PLAYING)refreshQualityOptions();if(app.applying||Date.now()<app.suppressUntil)return;if(e.data===YT.PlayerState.PLAYING)updateState({current_time:app.player.getCurrentTime(),is_playing:true},'play');if(e.data===YT.PlayerState.PAUSED)updateState({current_time:app.player.getCurrentTime(),is_playing:false},'pause')}
 function onRateChange(e){if(app.applying)return;updateState({current_time:app.player.getCurrentTime(),playback_speed:e.data},'speed')}
 function onPlayerError(e){const msg={2:'Invalid video URL',5:'This video cannot be played in HTML5',100:'Video unavailable',101:'The owner disabled embedding',150:'The owner disabled embedding'}[e.data]||'This video cannot be played';toast(msg);$('#video-title').textContent=msg}
