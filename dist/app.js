@@ -23,18 +23,18 @@ function refreshQualityOptions(){
 speedOptions.forEach(v=>$('#speed').add(new Option(`${v}x`,v)));
 $('#display-name').value=localStorage.syncstudy_name||'';
 $('#join-toggle').onclick=()=>$('#join-row').classList.toggle('hidden');
-$('#create-room').onclick=()=>enter(code());
-$('#join-room').onclick=()=>enter($('#room-code').value.trim().toUpperCase());
+$('#create-room').onclick=()=>enter(code(),true);
+$('#join-room').onclick=()=>enter($('#room-code').value.trim().toUpperCase(),false);
 $('#display-name').addEventListener('keydown',e=>{if(e.key==='Enter')$('#create-room').click()});
 const pathRoom=location.pathname.match(/\/room\/([\w-]+)/)?.[1];if(pathRoom){$('#room-code').value=pathRoom.toUpperCase();$('#join-row').classList.remove('hidden')}
 
-async function enter(roomId){
+async function enter(roomId,isCreator=false){
   const name=$('#display-name').value.trim();if(!name)return toast('Add your display name first');if(!roomId)return toast('Enter a room code');
   app.name=name.slice(0,32);app.roomId=roomId;localStorage.syncstudy_name=app.name;history.pushState({},'',`${basePath}/room/${roomId}`);
   $('#landing').classList.add('hidden');$('#room').classList.remove('hidden');$('#room-id').textContent=roomId;
   if(cfg.supabaseUrl&&cfg.supabaseAnonKey&&window.supabase){
     app.sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey,{auth:{persistSession:false}});await connectSupabase();
-  }else{connectDemo()}
+  }else{connectPeerRoom(isCreator)}
 }
 
 async function connectSupabase(){
@@ -51,15 +51,41 @@ async function connectSupabase(){
     .subscribe(async status=>{if(status==='SUBSCRIBED'){setConnection(true);await app.channel.track({name:app.name,user_id:uid,online_at:new Date().toISOString()});loadMessages();loadBookmarks()}else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT')setConnection(false)});
 }
 
-function connectDemo(){
-  app.demo=true;app.bus=new BroadcastChannel(`syncstudy:${app.roomId}`);app.bus.onmessage=e=>handleDemo(e.data);
-  const saved=JSON.parse(localStorage.getItem(`syncstudy_state:${app.roomId}`)||'null');app.state=saved||baseState();applyState(app.state,true);
-  app.people=new Map([[uid,{name:app.name,user_id:uid}]]);app.bus.postMessage({type:'hello',person:{name:app.name,user_id:uid}});renderDemoPeople();setConnection(true,'Demo mode');
+function roomPeerId(){return `syncstudy-${app.roomId.toLowerCase().replace(/[^a-z0-9-]/g,'')}`}
+function connectPeerRoom(isCreator){
+  app.demo=true;app.people=new Map([[uid,{name:app.name,user_id:uid}]]);app.connections=new Map();
+  app.state=JSON.parse(localStorage.getItem(`syncstudy_state:${app.roomId}`)||'null')||baseState();applyState(app.state,true);renderDemoPeople();
+  if(!window.Peer){setConnection(false,'P2P unavailable');return toast('Realtime service could not load')}
+  if(isCreator)startPeerHost();else startPeerClient();
+}
+function startPeerHost(){
+  setConnection(false,'Opening room');app.isHost=true;app.peer=new Peer(roomPeerId());
+  app.peer.on('open',()=>setConnection(true,'Live P2P'));
+  app.peer.on('connection',acceptPeerConnection);
+  app.peer.on('error',e=>{if(e.type==='unavailable-id'){app.peer.destroy();startPeerClient()}else{setConnection(false,'P2P error');toast('Could not open the realtime room')}});
+}
+function startPeerClient(){
+  setConnection(false,'Joining room');app.isHost=false;app.peer=new Peer();
+  app.peer.on('open',()=>{const conn=app.peer.connect(roomPeerId(),{reliable:true});app.hostConnection=conn;wirePeerConnection(conn,false)});
+  app.peer.on('error',e=>{if(e.type==='peer-unavailable'){setConnection(false,'Room unavailable');toast('Room owner is offline or the room code is incorrect')}else setConnection(false,'P2P error')});
+}
+function acceptPeerConnection(conn){app.connections.set(conn.peer,conn);wirePeerConnection(conn,true)}
+function wirePeerConnection(conn,hostSide){
+  conn.on('open',()=>{if(!hostSide){setConnection(true,'Live P2P');conn.send({type:'hello',person:{name:app.name,user_id:uid}})}else{conn.send({type:'state',data:app.state});conn.send({type:'presence',people:[...app.people.values()]})}});
+  conn.on('data',m=>handlePeerMessage(m,conn,hostSide));
+  conn.on('close',()=>{if(hostSide){app.connections.delete(conn.peer);if(conn.personId)app.people.delete(conn.personId);broadcastPeer({type:'presence',people:[...app.people.values()]});renderDemoPeople()}else setConnection(false,'Owner disconnected')});
+}
+function broadcastPeer(message,except=null){if(!app.isHost)return;app.connections.forEach(c=>{if(c!==except&&c.open)c.send(message)})}
+function handlePeerMessage(m,conn,hostSide){
+  if(!m||!m.type)return;
+  if(hostSide&&m.type==='hello'){conn.personId=m.person.user_id;app.people.set(m.person.user_id,m.person);const p={type:'presence',people:[...app.people.values()]};broadcastPeer(p);renderDemoPeople();conn.send({type:'state',data:app.state});return}
+  if(hostSide&&m.type==='state'){app.state=m.data;localStorage.setItem(`syncstudy_state:${app.roomId}`,JSON.stringify(m.data));applyState(m.data,true);broadcastPeer(m,conn);return}
+  if(hostSide&&m.type==='chat'){renderMessage(m.data);broadcastPeer(m,conn);return}
+  if(m.type==='state')receiveState(m.data);if(m.type==='chat')renderMessage(m.data);if(m.type==='presence'){app.people=new Map(m.people.map(p=>[p.user_id,p]));renderDemoPeople()}
 }
 function baseState(){return{id:app.roomId,video_id:null,current_time:0,playback_speed:1,is_playing:false,last_action:'join',last_updated_at:new Date().toISOString(),last_actor_id:uid,event_id:crypto.randomUUID(),notes:'',timer_end_at:null,timer_duration:1500}}
-function handleDemo(m){if(m.type==='state')receiveState(m.data);if(m.type==='chat')renderMessage(m.data);if(m.type==='hello'){app.people.set(m.person.user_id,m.person);app.bus.postMessage({type:'hello-reply',person:{name:app.name,user_id:uid}});renderDemoPeople()}if(m.type==='hello-reply'){app.people.set(m.person.user_id,m.person);renderDemoPeople()}}
 function renderDemoPeople(){renderPeople([...app.people.values()])}
-function setConnection(ok,label){$('#connection').className=`status ${ok?'connected':'offline'}`;$('#connection').innerHTML=`<i></i> ${label||(ok?'Live sync':'Offline')}`;if(app.demo)toast('Demo mode: open another tab to test sync')}
+function setConnection(ok,label){$('#connection').className=`status ${ok?'connected':'offline'}`;$('#connection').innerHTML=`<i></i> ${label||(ok?'Live sync':'Offline')}`}
 
 function renderPresence(){const all=Object.values(app.channel.presenceState()).flat();renderPeople(all)}
 function renderPeople(people){$('#participant-count').textContent=people.length;$('#participants-list').innerHTML=people.map(p=>`<div class="participant"><span class="avatar" style="background:${color(p.name)}33;color:${color(p.name)}">${p.name[0].toUpperCase()}</span><div><div class="participant-name">${escapeHtml(p.name)}${p.user_id===uid?' (you)':''}</div><div class="participant-state">Studying now</div></div><i class="online"></i></div>`).join('')}
@@ -68,7 +94,7 @@ function escapeHtml(v){const d=document.createElement('div');d.textContent=v;ret
 async function updateState(patch,action){
   const next={...(app.state||baseState()),...patch,last_action:action,last_actor_id:uid,last_updated_at:new Date().toISOString(),event_id:crypto.randomUUID()};
   app.state=next;app.lastEvent=next.event_id;
-  if(app.demo){localStorage.setItem(`syncstudy_state:${app.roomId}`,JSON.stringify(next));app.bus.postMessage({type:'state',data:next});applyState(next,false);return}
+  if(app.demo){localStorage.setItem(`syncstudy_state:${app.roomId}`,JSON.stringify(next));if(app.isHost)broadcastPeer({type:'state',data:next});else if(app.hostConnection?.open)app.hostConnection.send({type:'state',data:next});applyState(next,false);return}
   const {data,error}=await app.sb.rpc('update_room_state',{p_room_id:app.roomId,p_event_id:next.event_id,p_actor_id:uid,p_video_id:next.video_id,p_current_time:next.current_time,p_playback_speed:next.playback_speed,p_is_playing:next.is_playing,p_last_action:action,p_notes:next.notes,p_timer_end_at:next.timer_end_at,p_timer_duration:next.timer_duration});
   if(error)return toast('Sync update failed');app.state=data;app.channel.send({type:'broadcast',event:'state',payload:data});applyState(data,false);
 }
@@ -98,9 +124,10 @@ $('#seek').onchange=e=>{const t=(+e.target.value/1000)*(app.player.getDuration()
 $('#speed').onchange=e=>{const wanted=+e.target.value,rates=app.player?.getAvailablePlaybackRates?.()||[1];const nearest=rates.reduce((a,b)=>Math.abs(b-wanted)<Math.abs(a-wanted)?b:a,rates[0]);if(nearest!==wanted)toast(`${wanted}x is not supported for this video; using ${nearest}x`);app.player.setPlaybackRate(nearest);updateState({current_time:app.player.getCurrentTime(),playback_speed:nearest},'speed')};
 $('#quality').onchange=e=>{if(!app.ready)return;const wanted=e.target.value;app.player.setPlaybackQuality?.(wanted);setTimeout(()=>{const actual=app.player.getPlaybackQuality?.()||'default';if(wanted!=='default'&&actual!==wanted)toast(`${qualityLabels[wanted]} is unavailable; YouTube selected ${qualityLabels[actual]||'Auto'}`);e.target.value=actual},500)};
 $('#volume').oninput=e=>app.player?.setVolume(+e.target.value);$('#fullscreen').onclick=()=>$('.video-frame').requestFullscreen?.();
+$('#landscape').onclick=async()=>{try{await $('.video-frame').requestFullscreen?.();await screen.orientation?.lock?.('landscape');toast('Landscape mode enabled')}catch{toast('Rotate your phone to landscape; orientation lock is not supported here')}};
 $('#load-video').onclick=()=>{const id=videoId($('#video-url').value.trim());if(!id)return toast('Paste a valid YouTube URL');updateState({video_id:id,current_time:0,is_playing:false,playback_speed:1},'video_change');$('#video-url').value=''};
 
-async function sendChat(text){const m={id:crypto.randomUUID(),room_id:app.roomId,sender_id:uid,sender_name:app.name,message:text,created_at:new Date().toISOString()};if(app.demo)app.bus.postMessage({type:'chat',data:m});else{await app.sb.from('messages').insert(m);app.channel.send({type:'broadcast',event:'chat',payload:m})}renderMessage(m)}
+async function sendChat(text){const m={id:crypto.randomUUID(),room_id:app.roomId,sender_id:uid,sender_name:app.name,message:text,created_at:new Date().toISOString()};if(app.demo){if(app.isHost)broadcastPeer({type:'chat',data:m});else if(app.hostConnection?.open)app.hostConnection.send({type:'chat',data:m})}else{await app.sb.from('messages').insert(m);app.channel.send({type:'broadcast',event:'chat',payload:m})}renderMessage(m)}
 $('#chat-form').onsubmit=e=>{e.preventDefault();const i=$('#chat-input'),v=i.value.trim();if(v){sendChat(v);i.value=''}};
 function renderMessage(m){if(document.querySelector(`[data-message="${m.id}"]`))return;$('.welcome')?.remove();const d=document.createElement('div');d.className='message';d.dataset.message=m.id;d.innerHTML=`<div class="message-meta"><b>${escapeHtml(m.sender_name)}</b>${new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div><p>${escapeHtml(m.message)}</p>`;$('#messages').append(d);$('#messages').scrollTop=$('#messages').scrollHeight}
 async function loadMessages(){const {data}=await app.sb.from('messages').select('*').eq('room_id',app.roomId).order('created_at').limit(100);data?.forEach(renderMessage)}
@@ -114,6 +141,6 @@ $('#timer-toggle').onclick=()=>{const running=app.state?.timer_end_at&&new Date(
 $('#timer-reset').onclick=()=>updateState({timer_end_at:null,timer_duration:1500},'timer_reset');setInterval(renderTimer,1000);
 function renderTimer(){const s=app.state;if(!s)return;const left=s.timer_end_at?Math.max(0,Math.ceil((new Date(s.timer_end_at)-Date.now())/1000)):s.timer_duration||1500;$('#timer-display').textContent=fmt(left);$('#timer-toggle').textContent=s.timer_end_at&&left>0?'Pause':'Start focus'}
 function copyLink(){navigator.clipboard.writeText(location.href);toast('Invitation link copied')}
-$('#copy-link').onclick=copyLink;$('#copy-invite').onclick=copyLink;$('#leave-room').onclick=()=>{app.channel?.unsubscribe();location.href=basePath||'/'};
+$('#copy-link').onclick=copyLink;$('#copy-invite').onclick=copyLink;$('#leave-room').onclick=()=>{app.channel?.unsubscribe();app.peer?.destroy();location.href=basePath||'/'};
 window.addEventListener('popstate',()=>location.reload());
 
